@@ -1,0 +1,58 @@
+pipeline {
+  agent any
+  environment {
+    NEXUS = "REPLACE_WITH_NEXUS_HOST" // e.g. nexus.company.com:5000
+    IMAGE = "${env.NEXUS}/multicloud-app"
+  }
+  stages {
+    stage('Checkout') {
+      steps { checkout scm }
+    }
+    stage('Unit Test') {
+      steps {
+        sh 'python -m pip install -r app/requirements.txt'
+        // Add or run real unit tests if present
+      }
+    }
+    stage('Build Docker') {
+      steps {
+        dir('app') {
+          script {
+            sh "docker build -t ${IMAGE}:${GIT_COMMIT.take(7)} ."
+          }
+        }
+      }
+    }
+    stage('Push to Nexus') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'nexus-creds', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
+          sh 'docker login -u $NEXUS_USER -p $NEXUS_PASS ${NEXUS}'
+          sh "docker push ${IMAGE}:${GIT_COMMIT.take(7)}"
+        }
+      }
+    }
+    stage('Deploy to AWS EKS') {
+      steps {
+        // Assumes aws cli & kubectl configured in the Jenkins agent or credentialed kubeconfig
+        sh "kubectl config use-context aws-eks-context"
+        sh "helm upgrade --install multicloud-app ./helm-chart --set image.repository=${IMAGE},image.tag=${GIT_COMMIT.take(7)}"
+      }
+    }
+    stage('Deploy to GCP GKE') {
+      steps {
+        sh "kubectl config use-context gke-context"
+        sh "helm upgrade --install multicloud-app ./helm-chart --set image.repository=${IMAGE},image.tag=${GIT_COMMIT.take(7)}"
+      }
+    }
+    stage('Smoke Test') {
+      steps {
+        sh "kubectl --context=aws-eks-context get svc"
+        sh "kubectl --context=gke-context get svc"
+      }
+    }
+  }
+  post {
+    success { echo 'Pipeline completed successfully' }
+    failure { echo 'Pipeline failed' }
+  }
+}
