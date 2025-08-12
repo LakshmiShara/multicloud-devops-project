@@ -1,0 +1,12 @@
+replicaCount: 2
+image:
+  repository: REPLACE_WITH_NEXUS_OR_REGISTRY/multicloud-app
+  tag: latest
+service:
+  type: ClusterIP
+  port: 80
+ingress:
+  enabled: false
+  hosts: []
+  annotations: {}
+resources: {}
